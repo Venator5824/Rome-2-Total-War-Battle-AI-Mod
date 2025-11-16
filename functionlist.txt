@@ -1,0 +1,927 @@
+______________________________________
+FILE: LIB_SCRIPT_AI_PLANNER.lua
+Core Functions
+
+local enabled: Boolean
+
+local DEBUG: Boolean
+
+(dev.log, dev2.log -> log functions)
+
+local function secure_require(path: string) {void} - Requires and prevents script from crashing when require process failes
+
+script_ai_planner:new(name: string, army_or_sunit_list: table) { return script_ai_planner: object } - Creates a new AI planner instance
+
+script_ai_planner:get_dist_mod() { return manpower_mod: number } - Calculates manpower distribution modifier
+
+script_ai_planner:start_update_loops() { return void } - Starts CEO, manager, and soldier update loops
+
+script_ai_planner:analyze_battle_start() { return void } - Performs initial battle analysis
+
+script_ai_planner:update_army_strategy(enemy_force: table) { return void } - Updates overall army strategy
+
+script_ai_planner:update_group_objectives() { return void } - Updates objectives for battle groups
+
+Unit Management
+script_ai_planner:process_unit(sunit: script_unit) { return void } - Processes individual unit logic
+
+script_ai_planner:execute_job(sunit: script_unit, job: string, group: table, tactic: string) { return void } - Executes unit's assigned job
+
+script_ai_planner:determine_unit_role(sunit: script_unit) { return role: string } - Determines unit's combat role
+
+script_ai_planner:determine_unit_position(sunit: script_unit) { return position: string } - Determines unit's formation position
+
+Tactical Functions
+script_ai_planner:select_tactic(enemy_force: table, sunit: script_unit) { return tactic_name: string } - Selects best tactic for unit
+
+script_ai_planner:select_flanking_position(sunit: script_unit, group_center: vector) { return position: vector } - Calculates flanking position
+
+script_ai_planner:get_safe_position(sunit: script_unit) { return position: vector } - Finds safe repositioning location
+
+script_ai_planner:check_cavalry_proximity(sunit: script_unit) { return needs_move: boolean } - Checks if cavalry needs to reposition
+
+Group Management
+script_ai_planner:create_battle_groups() { return battle_groups: table } - Creates tactical battle groups
+
+script_ai_planner:get_unit_group(sunit: script_unit) { return group: table } - Gets unit's assigned battle group
+
+script_ai_planner:analyze_group_composition(group: table) { return composition: table } - Analyzes group unit composition
+
+script_ai_planner:assign_group_mission(composition: table, strategy: string) { return mission: string } - Assigns mission to group
+
+Position & Navigation
+script_ai_planner:get_centre_point(unit_list: table) { return center_point: vector } - Calculates center point of units
+
+script_ai_planner:get_lcenter_point(unit_group: table) { return local_center: vector } - Gets local group center
+
+script_ai_planner:select_defensive_position(sunit: script_unit, group_center: vector) { return position: vector } - Finds defensive position
+
+script_ai_planner:find_high_ground_position(center: vector) { return position: vector } - Finds high ground position
+
+Battle State & Analysis
+script_ai_planner:cache_battle_state(enemy_force: table) { return void } - Caches current battle state
+
+script_ai_planner:analyze_terrain() { return terrain_features: table } - Analyzes terrain features
+
+script_ai_planner:evaluate_terrain_position(pos: vector, center: vector) { return score: number } - Evaluates terrain position value
+
+script_ai_planner:check_flanking_threats(enemy_force: table) { return is_threatened: boolean } - Checks for flanking threats
+
+Specialized Behaviors
+script_ai_planner:pike_behavior_check(sunit: script_unit, enemy_force: table) { return behavior_applied: boolean } - Handles pike unit behavior
+
+script_ai_planner:check_charge_path(sunit: script_unit, target_pos: vector) { return is_clear: boolean, quality: number } - Checks cavalry charge path
+
+script_ai_planner:maintain_second_line() { return void } - Manages second line/reserve units
+
+script_ai_planner:predict_enemy_movements(enemy_force: table, sunit: script_unit) { return predictions: table } - Predicts enemy movements
+
+Utility Functions
+script_ai_planner:get_active_units() { return active_units: table } - Gets all non-routing units
+
+script_ai_planner:get_enemy_force() { return enemy_units: table } - Gets all enemy units
+
+script_ai_planner:get_nearby_enemies(sunit: script_unit, range: number) { return has_nearby_enemies: boolean } - Checks for nearby enemies
+
+script_ai_planner:check_emergency_triggers(enemy_force: table) { return emergency_triggered: boolean } - Checks emergency conditions
+
+External Interface
+script_ai_planner:attack_force(enemy_force: table) { return void } - Override for attack commands
+
+script_ai_planner:defend_position(pos: vector, radius: number) { return success: boolean } - Defends specified position
+
+script_ai_planner:get_nearest_gate(pos: vector) { return gate_position: vector } - Finds nearest gate for defense
+
+Cleanup & Maintenance
+script_ai_planner:cleanup_battle() { return void } - Comprehensive battle cleanup
+
+script_ai_planner:register_battle_end_listener() { return void } - Registers battle end cleanup
+
+script_ai_planner:periodic_cache_maintenance() { return void } - Performs cache maintenance
+
+Global Functions
+create_ai_planners() { return void } - Creates AI planners for all non-player armies
+
+get_unit_facing_vector(unit: battle_unit) { return facing_vector: table } - Gets unit's facing direction vector
+
+is_point_on_path(A: vector, B: vector, C: vector, width: number) { return is_on_path: boolean } - Checks if point is on path
+
+table_contains(tbl: table, element: any) { return contains: boolean } - Checks if table contains element
+
+degrees_to_radians(degrees: number) { return radians: number } - Converts degrees to radians
+
+Debug Functions
+dev.log(text: string) { return void } - Logs to TWDLL
+
+dev.log2(text: string) { return void } - Logs to file
+
+secure_require(path: string) { return void } - Safely requires submodules with error handling
+________________________________________________
+
+
+FILE: ai_battle_data.lu
+
+Global Configuration
+GLOBAL_DEBUG: boolean - Global debug flag for AI system
+
+BOOL_AIBUL_ENABLED: boolean - AI Battle Update Limiter enabled/disabled
+
+MAX_UNITS_PER_FRAME: number - Default hard cap for units processed per frame
+
+MAX_UNITS_PER_FRAME_HIGH_SETTINGS: number - High settings cap for units processed per frame
+
+Data Structures
+unit_type_tactics: table - Mapping of unit roles to allowed tactic IDs
+
+elephant: table - Tactic IDs for elephant units
+
+shock_cavalry: table - Tactic IDs for shock cavalry
+
+melee_cavalry: table - Tactic IDs for melee cavalry
+
+missile_cavalry: table - Tactic IDs for missile cavalry
+
+light_cavalry: table - Tactic IDs for light cavalry
+
+pike_infantry: table - Tactic IDs for pike infantry
+
+infantry: table - Tactic IDs for infantry
+
+ranged: table - Tactic IDs for ranged units
+
+support: table - Tactic IDs for support units
+
+chariot: table - Tactic IDs for chariot units
+
+factions: table - Database of faction information with culture mappings
+
+[faction_name]: table - Individual faction data
+
+index_key: number - Unique identifier for faction
+
+subculture: string - Subculture classification
+
+culture: string - Main culture classification
+
+Core Functions
+getFactionCulture(factionName: string) { return culture: string } - Gets culture for a faction name
+
+get_faction_name() { return faction_name: string } - Gets current faction name from game state
+
+Return Statement
+return ai_battle_data - Returns the battle data module
+_________________________________________________________
+
+FILE: AI_CAVALRY_OVERRIDE.lua
+
+
+Global Configuration
+BOOL_BAICO_ENABLED: boolean - Cavalry override system enabled/disabled
+
+Data Structures
+ai_cavalry_override: table - Main cavalry override module
+
+initial_hold_duration: number - Duration to prevent early charges (ms)
+
+anti_pike_distance: number - Squared distance threshold to avoid pikes
+
+last_check_time: number - Timestamp of last check
+
+planner: script_ai_planner - Reference to AI planner instance
+
+Core Functions
+ai_cavalry_override:init(planner: script_ai_planner) { return void } - Initializes cavalry override with planner reference
+
+ai_cavalry_override:is_suicidal_maneuver(sunit: script_unit, target: script_unit, current_time: number) { return is_suicidal: boolean } - Checks if cavalry maneuver is suicidal
+
+Return Statement
+return ai_cavalry_override - Returns the cavalry override module
+
+__________________________________________________________________
+
+FILE: ai_cultures_battle_data.lua
+
+ai_cultures_battle_data: table - Culture-specific battle preferences database
+
+Culture Entries Structure:
+[culture_name]: table - Individual culture configuration
+
+strategy_weights: table - Weight modifiers for different strategies
+
+tactic_weights: table - Weight modifiers for different tactics
+
+preferred_formations: table - Preferred formations for strategies/tactics
+
+tactic_ids: table - Available tactic IDs for the culture
+
+Supported Cultures:
+rom_Roman: table - Roman culture battle preferences
+
+rom_Eastern: table - Eastern culture battle preferences
+
+rom_Barbarian: table - Barbarian culture battle preferences
+
+rom_Hellenistic: table - Hellenistic culture battle preferences
+
+default: table - Fallback culture battle preferences
+
+Return Statement
+return ai_cultures_battle_data
+________________________________________________________________________
+
+FILE: AI_FORMATIONS.lua
+Data Structures
+ai_formations: table - Main formations management module
+
+army_formations: table - Army-level formation definitions
+
+normal_formation: table - Standard battle formation
+
+formation_stable: table - Defensive stable formation
+
+formation_flanking: table - Flanking-oriented formation
+
+roman_acies: table - Roman-specific formation
+
+unit_formations: table - Unit-level formation definitions
+
+formation_cavalrycharge: table - Cavalry charge formation
+
+formation_infantry_wedge: table - Infantry wedge formation
+
+fpike: table - Pike unit formation
+
+double_formation: table - Double line formation
+
+roman_testudo: table - Roman testudo formation
+
+wall_defense: table - Wall defense formation
+
+Core Functions
+ai_formations.get_formation_for_tactic(tactic_name: string, culture_data: table) { return formation_name: string } - Gets preferred formation for tactic
+
+ai_formations.get_unit_position(sunit: script_unit, group_center: vector, formation_type: string, role: string, position: string) { return position: vector } - Calculates unit position in formation
+
+ai_formations.needs_reform(sunit: script_unit, group_center: vector, formation_type: string, role: string, position: string) { return needs_reform: boolean } - Checks if unit needs formation reform
+
+ai_formations.apply_unit_formation(sunit: script_unit, group_center: vector, formation_name: string) { return units: table, positions: table } - Applies unit formation
+
+Utility Functions
+ai_formations.get_defensive_position(sunit: script_unit, group_center: vector) { return position: vector } - Gets defensive position
+
+ai_formations.get_wave_position(sunit: script_unit, group_center: vector) { return position: vector } - Gets wave attack position
+
+ai_formations.has_terrain_advantage(pos: vector) { return has_advantage: boolean } - Checks terrain advantage
+
+ai_formations.clear_caches() { return void } - Clears all formation caches
+
+Helper Functions
+get_nearest_wall_position_cached(center: vector) { return wall_position: vector } - Gets nearest wall position with caching
+
+get_bm() { return battle_manager: table } - Gets battle manager instance
+
+Return Statement
+return ai_formations - Returns the formations module
+
+_____________________________________________________
+
+FILE: ai_strategy_evaluator.lua
+
+
+
+Data Structures
+ai_strategy_evaluator: table - Main strategy evaluation module
+
+strategies: table - Strategy definitions database
+
+overrun: table - Overwhelming attack strategy
+
+advance: table - Offensive advance strategy
+
+stand_and_fight: table - Balanced engagement strategy
+
+defend: table - Defensive positioning strategy
+
+retreat: table - Withdrawal and survival strategy
+
+Strategy Structure:
+key: number - Unique identifier
+
+conditions: table - Activation conditions
+
+impact: table - Effect modifiers on tactics
+
+data: table - Usage constraints and metadata
+
+Core Functions
+ai_strategy_evaluator.evaluate_strategy(planner: script_ai_planner, enemy_force: table) { return strategy_name: string } - Evaluates and selects best army strategy
+
+ai_strategy_evaluator.evaluate_tactic(planner: script_ai_planner, tactic: table, enemy_force: table, culture_data: table, sunit: script_unit) { return score: number } - Scores individual tactics for units
+
+Return Statement
+return ai_strategy_evaluator
+
+_________________________________________________________
+
+FILE_ ai_tactical_Grid.lua
+
+
+Data Structures
+TacticalGrid: table - Main tactical grid management module
+
+grid: table - Grid data structure storing unit positions
+
+grid_size: number - Dynamic grid size (scaled by manpower)
+
+cell_size: number - Dynamic cell size (scaled by manpower)
+
+last_update: number - Timestamp of last grid update
+
+planner: script_ai_planner - Reference to AI planner instance
+
+Core Functions
+TacticalGrid:init(planner: script_ai_planner) { return void } - Initializes grid with dynamic sizing based on planner
+
+TacticalGrid:world_to_grid(world_pos: vector) { return grid_x: number, grid_y: number } - Converts world coordinates to grid coordinates
+
+TacticalGrid:update(planner: script_ai_planner) { return void } - Updates grid with current unit positions (friend/foe)
+
+Query Functions
+TacticalGrid:is_cell_blocked_by_ally(x: number, y: number) { return is_blocked: boolean } - Checks if cell is occupied by ally units
+
+TacticalGrid:get_units_in_cell(x: number, y: number) { return units: table } - Gets all units in specific grid cell
+
+TacticalGrid:get_units_of_type_in_cell(x: number, y: number, unit_type: string) { return units: table } - Gets units of specific type in cell
+
+Maintenance Functions
+TacticalGrid:clear_caches_and_timers() { return void } - Clears grid data and resets timers
+
+Return Statement
+return ai_tactical_grid - Returns the tactical grid module
+__________________________________________________________
+
+
+file: ai_tactics_data.lua
+
+CAVALRY_SLEEPTIME: number - Cavalry initial hold duration
+MELEE_ATTACK_KEY: number - Melee attack tactic identifier
+PIKEWALL_ATTACK_KEY: number - Pike wall attack tactic identifier
+FLANKING_INFANTRY_KEY: number - Infantry flanking tactic identifier
+FLANKING_CAVALRY_KEY: number - Cavalry flanking tactic identifier
+[... 30+ more tactic constants ...] - Individual tactic configuration constants
+
+Data Structures
+ai_tactics_data: table - Main tactics database module
+
+tactics: table - Complete tactics definitions database
+
+tactics_by_key: table - Lookup table for tactics by numeric key
+
+Tactic Structure:
+key: number - Unique numeric identifier
+
+type: table - Tactic classification tags
+
+prefersinformation: boolean - Information preference flag
+
+onlyinformation: boolean - Information-only restriction
+
+maxdelaytime: number - Maximum delay before execution
+
+base_weight: number - Base selection weight
+
+mintimeinusage: number - Minimum usage duration
+
+cooldown: number - Cooldown period between uses
+
+priority: number - Selection priority
+
+isunique: boolean - Culture uniqueness flag
+
+id: string - Unique string identifier
+
+unit_formation: string/table - Associated formation(s)
+
+execute: function - Tactic execution logic
+
+Core Functions
+ai_tactics_data.terrain_blocks_missiles(current_pos: vector, enemy_pos: vector) { return is_blocked: boolean } - Checks if terrain blocks missile line of sight
+
+perform_skirmish(sunit: script_unit, target: script_unit, enemy_force: table, desired_distance: number) { return void } - Executes skirmishing behavior for missile units
+
+Tactic Execution Functions
+melee_attack.execute(sunit: script_unit, pos: vector, enemy_force: table, battle_state: table) { return void } - Standard melee engagement
+pikewall_attack.execute(sunit: script_unit, pos: vector, enemy_force: table, battle_state: table) { return void } - Pike formation tactics
+flanking_infantry.execute(sunit: script_unit, pos: vector, enemy_force: table, battle_state: table) { return void } - Infantry flanking maneuvers
+flanking_cavalry.execute(sunit: script_unit, pos: vector, enemy_force: table, battle_state: table) { return void } - Cavalry flanking maneuvers
+missile_attacking.execute(sunit: script_unit, pos: vector, enemy_force: table, battle_state: table) { return void } - Ranged unit engagement
+rotate_units.execute(sunit: script_unit, pos: vector, enemy_force: table, battle_state: table) { return void } - Unit rotation and recovery
+[... 25+ more tactic execution functions ...] - Individual tactic behaviors
+
+Helper Functions
+get_unit_facing_vector(unit: battle_unit) { return facing_vector: table } - Gets unit's facing direction
+vec_length(v: table) { return length: number } - Calculates vector length
+vec_normalize(v: table) { return normalized_vector: table } - Normalizes vector to unit length
+degrees_to_radians(degrees: number) { return radians: number } - Converts degrees to radians
+
+Return Statement
+return ai_tactics_data - Returns the tactics data module
+___________________________________________________________
+
+file: ai_unit_intelligence.lua
+
+
+Global Configuration
+GRID_UPDATE_INTERVAL: number - Grid update frequency (ms)
+MAX_TEMP_ENEMIES: number - Maximum enemies to process
+GRID_SIZE: number - Grid cell size in meters
+SEARCH_RANGE: number - Target search range in meters
+FATIGUE_THRESHOLD: number - Fatigue threshold for rotation
+MORALE_THRESHOLD: number - Morale threshold for rotation
+RECOVERY_TIME: number - Recovery time for rotated units (ms)
+
+Data Structures
+ai_unit_intelligence: table - Main unit intelligence module
+direction_cache: table - Cached unit movement directions
+temp_enemies: table - Temporary enemy storage for processing
+tactical_multipliers: table - Role-based target scoring multipliers
+
+Core Target Selection Functions
+ai_unit_intelligence.select_target(sunit: script_unit, potential_targets: table) { return target: script_unit } - Primary target selection with tactical grid
+
+ai_unit_intelligence.select_flanking_target(sunit: script_unit, enemy_force: table, max_distance: number, prefer_routing: boolean, prefer_weak_infantry: boolean, prefer_skirmish: boolean) { return target: script_unit } - Flanking target selection
+
+ai_unit_intelligence.select_pursuit_target(sunit: script_unit, enemy_force: table, max_distance: number) { return target: script_unit } - Routing enemy pursuit
+
+ai_unit_intelligence.select_cavalry_target(sunit: script_unit, enemy_force: table, max_distance: number) { return target: script_unit } - Cavalry-specific target selection
+
+ai_unit_intelligence.select_rear_target(sunit: script_unit, enemy_force: table, max_distance: number) { return target: script_unit } - Rear attack target selection
+
+ai_unit_intelligence.select_elephant_target(sunit: script_unit, enemy_force: table) { return target: script_unit } - Elephant unit target selection
+
+ai_unit_intelligence.select_group_target(planner: script_ai_planner, group: table, enemy_force: table) { return target: script_unit } - Group-level target selection
+
+Tactical Analysis Functions
+ai_unit_intelligence.get_urgent_action(sunit: script_unit, enemy_force: table, battle_state: table) { return action: table } - Emergency response actions
+
+ai_unit_intelligence.is_area_crowded(sunit: script_unit, friendly_units: table, max_distance: number) { return is_crowded: boolean } - Crowding detection
+
+ai_unit_intelligence.get_charge_path(sunit: script_unit, target: script_unit) { return waypoint: vector, has_blocker: boolean } - Charge path calculation
+
+ai_unit_intelligence.evaluate_target_value(target: script_unit) { return value: number } - Target value assessment
+
+Siege & Specialized Functions
+ai_unit_intelligence.select_siege_target(sunit: script_unit, enemy_force: table) { return position: vector } - Siege equipment targeting
+
+ai_unit_intelligence.find_siege_conflict_zone(sunit: script_unit, enemy_force: table) { return zone_center: vector } - Siege hot spot detection
+
+Utility Functions
+ai_unit_intelligence.clear_caches() { return void } - Clears all intelligence caches
+
+get_dominant_direction(sunit: script_unit) { return dx: number, dz: number } - Gets unit movement direction
+
+is_point_on_path(A: vector, B: vector, C: vector, width: number) { return is_on_path: boolean } - Path collision detection
+
+Return Statement
+return ai_unit_intelligence - Returns the unit intelligence module
+___________________________________________________________
+
+file: ai_update_limiter.lua
+
+Global Configuration
+BOOL_AIBUL_ENABLED: boolean - Update limiter system enabled/disabled
+
+Data Structures
+ai_update_limiter: table - Main update limiter module
+
+update_queue: table - Queue of units to process
+
+current_index: number - Current position in queue
+
+frame_interval: number - Default frame interval (50ms = 20 FPS)
+
+frame_interval_high_settings: number - High performance interval (32ms = 30 FPS)
+
+units_processed_this_frame: number - Units processed in current frame
+
+last_update_time: number - Timestamp of last update
+
+last_fps_check: number - Timestamp of last FPS check
+
+MAX_UNITS_PER_FRAME: number - Default units per frame limit
+
+MAX_UNITS_PER_FRAME_HIGH_SETTINGS: number - High performance units per frame limit
+
+frametime_ms: number - Current real frametime in milliseconds
+
+_last_realtime: number - Internal realtime tracking
+
+planner: script_ai_planner - Reference to AI planner instance
+
+Core Functions
+ai_update_limiter:init(planner: script_ai_planner) { return void } - Initializes update limiter with planner and frametime tracking
+
+ai_update_limiter:process_next_unit(planner: script_ai_planner, enemy_force: table, current_time: number) { return void } - Processes next unit in queue with framerate limiting
+
+ai_update_limiter:clear_caches_and_timers() { return void } - Clears all limiter data and resets state
+
+Stub Function
+script_ai_planner:execute_tactic_for_unit(sunit: script_unit, enemy_force: table, center: vector, current_time: number) { return void } - Stub function for unit tactic execution
+
+Return Statement
+return ai_update_limiter - Returns the update limiter module
+_____________________________________________________________
+
+
+:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+:::: NATIVE FILES THAT ARE ONLY MADE TO WORK WITH THIS MOD ::::
+:::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+______________________________________________________________
+
+file: lib_battlemanager.lua
+
+
+Core Functions
+battle_manager:new() { return battle_manager: object } - Creates a new battle manager instance
+
+battle_manager:out(str: string) { return void } - Outputs debug message if debug mode enabled
+
+Callback Management
+battle_manager:callback(new_callback: function, new_time_offset: number, new_entryname: string) { return success: boolean } - Registers a one-time callback
+
+battle_manager:repeat_callback(new_callback: function, new_time_offset: number, new_entryname: string) { return success: boolean } - Registers a repeating callback
+
+battle_manager:remove_callback(name: string) { return void } - Removes a registered callback
+
+Advisor System
+battle_manager:queue_advisor(new_advisor_string: string, new_duration: number, new_is_debug: boolean, new_callback: function, new_callback_offset: number) { return success: boolean } - Queues advisor message for playback
+
+battle_manager:play_next_advice() { return success: boolean } - Plays next advisor message in queue
+
+battle_manager:stop_advisor_queue(close_advisor: boolean, dont_play: boolean) { return void } - Stops advisor queue and clears pending messages
+
+battle_manager:advice_finished() { return is_finished: boolean } - Checks if current advice has finished playing
+
+battle_manager:close_advisor() { return void } - Closes current advisor display
+
+Battle Analysis
+battle_manager:get_battle_phase() { return phase: string } - Gets current battle phase (early/mid/late)
+
+battle_manager:validate_units() { return void } - Validates units and cleans up dead/routing units
+
+battle_manager:remove_unit_callbacks(unit: battle_unit) { return void } - Removes callbacks for specific unit
+
+Terrain Analysis
+battle_manager:get_terrain_positions() { return positions: table } - Gets strategic terrain positions
+
+battle_manager:is_high_ground(pos: vector) { return is_high_ground: boolean } - Checks if position is high ground
+
+battle_manager:get_terrain_height(pos: vector) { return height: number } - Gets terrain elevation at position
+
+Utility Functions
+battle_manager:current_time() { return time: number } - Gets current battle time
+
+battle_manager:alliances() { return alliances: table } - Gets battle alliances
+
+battle_manager:set_debug(is_debug: boolean) { return void } - Toggles debug mode
+
+battle_manager:get_frametime() { return fps: number } - Gets current framerate
+
+Data Structures
+battle_manager: table - Main battle management module
+
+tm: timer_manager - Timer management instance
+
+alliances: table - Battle alliances data
+
+advisor_list: table - Queue of advisor messages
+
+advice_is_playing: boolean - Current advice playback state
+
+advisor_stopping: boolean - Advisor stop flag
+
+should_close_queue_advice: boolean - Advisor close flag
+
+advice_dont_play: boolean - Advice playback disable flag
+
+advisor_force_playing: boolean - Force advice playback flag
+
+is_debug: boolean - Debug mode flag
+
+_______________________________________________________________
+
+
+FILE: lib_Patrol_manager.lua
+
+Constants
+PATROL_MANAGER_REACHED_DESTINATION: number - Destination reached status
+PATROL_MANAGER_PURSUED_TOO_FAR: number - Pursuit exceeded radius status
+PATROL_MANAGER_STARTING: number - Patrol starting status
+PATROL_MANAGER_RESTARTING: number - Patrol restarting status
+PATROL_MANAGER_STOPPING_ON_INTERCEPT: number - Stopping on intercept status
+PATROL_MANAGER_INTERCEPT_AS_NORMAL: number - Normal intercept status
+PATROL_MANAGER_UNIT_IS_DEAD_OR_ROUTING: number - Unit dead/routing status
+PATROL_MANAGER_UNIT_IS_NO_LONGER_ROUTING: number - Unit recovered status
+PATROL_MANAGER_COULDNT_FIND_TARGET: number - Target not found status
+
+PATROL_MANAGER_REORDER_INTERVAL: number - Intercept check interval (12s)
+PATROL_MANAGER_DEFAULT_GUARD_RADIUS: number - Default guard radius (500)
+PATROL_MANAGER_DEFAULT_INTERCEPT_TIME: number - Default intercept time (6500ms)
+PATROL_MANAGER_MIN_INTERCEPT_TO_ABANDON_SPACING: number - Minimum abandon spacing
+PATROL_MANAGER_WAYPOINT_REACHED_THRESHOLD_INF: number - Infantry waypoint threshold
+PATROL_MANAGER_WAYPOINT_REACHED_THRESHOLD_CAV: number - Cavalry waypoint threshold
+PATROL_MANAGER_WAYPOINT_REACHED_THRESHOLD_NAVAL: number - Naval waypoint threshold
+
+Data Structures
+patrol_manager: table - Main patrol management module
+
+name: string - Patrol manager identifier
+
+sunit: script_unit - Controlled unit
+
+enemy_armies: table - Enemy armies to patrol against
+
+intercept_radius: number - Enemy detection radius
+
+abandon_radius: number - Pursuit abandonment radius
+
+guard_radius: number - Guard area radius
+
+bm: battle_manager - Battle manager reference
+
+interception_callback: function - Intercept event callback
+
+abandon_callback: function - Abandon pursuit callback
+
+completion_callback: function - Patrol completion callback
+
+rout_callback: function - Unit routing callback
+
+stop_on_rout: boolean - Stop on rout flag
+
+stop_on_intercept: boolean - Stop on intercept flag
+
+waypoint_reached_threshold: number - Waypoint arrival distance
+
+is_debug: boolean - Debug mode flag
+
+is_naval: boolean - Naval unit flag
+
+is_intercepting: boolean - Currently intercepting flag
+
+intercept_time: number - Intercept duration
+
+waypoints: table - Patrol waypoints
+
+current_waypoint: number - Current waypoint index
+
+width: number - Formation width
+
+walk_speed: number - Movement speed
+
+force_run: boolean - Force running flag
+
+is_running: boolean - Patrol active flag
+
+should_loop: boolean - Loop patrol flag
+
+waypoint: table - Waypoint data structure
+
+pos: vector - Waypoint position
+
+speed: boolean - Movement speed flag
+
+wait_time: number - Wait duration at waypoint
+
+orient: number - Facing orientation
+
+width: number - Formation width
+
+Core Functions
+patrol_manager:new(new_name: string, new_sunit: script_unit, new_enemy_armies: table, new_intercept_radius: number, new_abandon_radius: number, new_guard_radius: number) { return patrol_manager: object } - Creates new patrol manager
+
+patrol_manager:add_waypoint(dest_obj: vector/unit, should_run: boolean, delay: number, orientation: number, width: number) { return void } - Adds waypoint to patrol route
+
+patrol_manager:start() { return success: boolean } - Starts the patrol
+
+patrol_manager:resume_patrol() { return success: boolean } - Resumes paused patrol
+
+patrol_manager:stop() { return success: boolean } - Stops the patrol
+
+Patrol Logic Functions
+patrol_manager:intercept() { return void } - Checks for enemy interception
+
+patrol_manager:check_abandon_intercept() { return void } - Checks if pursuit should be abandoned
+
+patrol_manager:next_waypoint() { return void } - Advances to next waypoint
+
+patrol_manager:move_to_current_waypoint() { return success: boolean } - Moves unit to current waypoint
+
+Utility Functions
+patrol_manager:get_angle_to_pos(source: vector, target: vector) { return angle: number } - Calculates angle between positions
+
+waypoint:new(new_pos: vector, new_speed: boolean, new_wait_time: number, new_orient: number, new_width: number) { return waypoint: object } - Creates waypoint object
+
+__________________________________________________________
+
+FILE: lib_script_unit.lua
+
+
+
+Utility Functions
+is_scriptunit(obj: any) { return is_scriptunit: boolean } - Checks if object is a script unit
+
+unit_proportion_alive(unit: battle_unit) { return proportion: number } - Calculates proportion of men alive
+
+v(x: number, z: number) { return vector: table } - Creates vector table
+
+v_to_s(v: table) { return string: string } - Converts vector to string
+
+d_to_r(d: number) { return radians: number } - Converts degrees to radians
+
+math_max(a: number, b: number) { return max: number } - Returns maximum of two numbers
+
+Core Functions
+script_unit:new(new_army: army, new_ref: string/number, new_alliance_num: number) { return script_unit: object } - Creates new script unit instance
+
+is_routing_or_dead(obj: script_unit/table) { return is_routing_or_dead: boolean } - Checks if unit/group is routing or dead
+
+has_moved(obj: script_unit/table, threshold: number) { return has_moved: boolean } - Checks if unit/group has moved
+
+has_taken_casualties(obj: script_unit/table) { return has_casualties: boolean } - Checks if unit/group took casualties
+
+Script Unit Methods
+State Management
+script_unit:cache_state() { return void } - Caches current unit state
+
+script_unit:cache_position() { return void } - Caches current position
+
+script_unit:cache_health() { return void } - Caches current health
+
+script_unit:get_state(enemy_force: table) { return state: table } - Gets comprehensive unit state
+
+Movement & Positioning
+script_unit:teleport_to_start_location() { return void } - Teleports unit to start position
+
+script_unit:teleport_to_start_location_offset(x_offset: number, z_offset: number) { return void } - Teleports with offset
+
+script_unit:move_to_position(pos: vector, should_run: boolean) { return void } - Moves unit to position
+
+script_unit:move_to_position_offset(x_offset: number, z_offset: number, should_run: boolean) { return void } - Moves with offset
+
+script_unit:goto_start_location(should_run: boolean) { return void } - Moves to start position
+
+script_unit:predict_position(frames_ahead: number) { return position: table } - Predicts future position
+
+script_unit:calculate_offset_position(base_pos: vector, bearing: number, x_offset: number, z_offset: number) { return position: vector } - Calculates offset position
+
+Dynamic Calculations
+script_unit:calculate_morale() { return morale: number } - Calculates dynamic morale value
+
+script_unit:calculate_fatigue() { return fatigue: number } - Calculates dynamic fatigue value
+
+script_unit:is_in_melee_dynamic(enemy_force: table) { return is_in_melee: boolean } - Checks if unit is in melee
+
+State Checking
+script_unit:has_moved(threshold: number) { return has_moved: boolean } - Checks if unit has moved from cached position
+
+script_unit:has_taken_casualties() { return has_casualties: boolean } - Checks if unit took casualties
+
+Data Structures
+script_unit: table - Main script unit module
+
+bm: battle_manager - Battle manager reference
+
+name: string - Unit identifier
+
+army: army - Parent army
+
+unit: battle_unit - Native unit object
+
+uc: unit_controller - Unit controller instance
+
+alliance: alliance - Unit alliance
+
+start_position: vector - Initial position
+
+start_bearing: number - Initial bearing
+
+start_width: number - Initial formation width
+
+initial_men: number - Initial number of men
+
+last_health: number - Last cached health
+
+damage_timestamps: table - Damage event history
+
+last_engage_time: number - Last melee engagement time
+
+movement_time: number - Last movement time
+
+last_position: vector - Last position
+
+velocity: table - Movement velocity
+
+state_history: table - State change history
+
+initial_state: table - Initial battle state
+
+cached_pos: vector - Cached position
+
+cached_bearing: number - Cached bearing
+
+cached_width: number - Cached width
+
+cached_hp: number - Cached health
+
+current_target_pos: vector - Current movement target
+
+last_action_time: number - Last action time
+
+
+________________________________________________________________
+
+
+
+FILE: lib_misc_battle.lua
+
+
+
+Global Configuration
+DEBUG_ERRORS: boolean - Error debugging enabled
+MAX_BATTLE_DISTANCE: number - Maximum battle distance constant
+ROUT_UNIT_LIMIT: number - Maximum units to route simultaneously
+SIEGE_AVOID_RANGE: number - Siege avoidance range
+FIELD_AVOID_RANGE: number - Field battle avoidance range
+
+Battle Control Functions
+slow_game_over_time(start_speed: number, target_speed: number, total_time: number, steps: number) { return void } - Gradually slows game speed
+
+new_sfx(soundfile: string) { return sound_effect: object } - Creates new sound effect
+
+play_sound(position: vector, sound: sound_effect) { return void } - Plays sound at position
+
+stop_sound(sound: sound_effect) { return void } - Stops sound playback
+
+Unit Controller Management
+unitcontroller_from_army(army: army) { return unit_controller: object } - Creates controller for entire army
+
+create_unitcontroller(army: army, ...units: battle_unit) { return unit_controller: object } - Creates controller for specific units
+
+create_ai_planner(units: table) { return ai_planner: object } - Creates AI planner for units
+
+Unit State Analysis
+collect_routing_or_dead_units(obj: any, shattered_only: boolean) { return units: table } - Collects routing/dead units
+
+is_shattered_or_dead(obj: any) { return is_shattered: boolean } - Checks if unit is shattered/dead
+
+num_units_routing(obj: any, shattered_only: boolean) { return count: number } - Counts routing units
+
+num_units_shattered(obj: any) { return count: number } - Counts shattered units
+
+number_alive(obj: any) { return alive_count: number, total_count: number } - Counts alive/total units
+
+proportion_alive(obj: any) { return proportion: number } - Calculates alive proportion
+
+unit_proportion_alive(unit: battle_unit) { return proportion: number } - Calculates unit alive proportion
+
+Routing & Movement
+rout_to_border_safely(army: army, enemy_alliance: alliance) { return void } - Safely routes army to border
+
+rout_all_units(obj: any) { return void } - Routes all units in object
+
+Position & Distance Analysis
+number_close_to_position(obj: any, pos: vector, range: number, two_d: boolean, standing_only: boolean, return_bool: boolean) { return count: number/boolean } - Counts units near position
+
+standing_number_close_to_position(obj: any, pos: vector, range: number, two_d: boolean) { return count: number } - Counts standing units near position
+
+is_close_to_position(obj: any, pos: vector, range: number, two_d: boolean, standing_only: boolean) { return is_close: boolean } - Checks if units are near position
+
+standing_is_close_to_position(obj: any, pos: vector, range: number, two_d: boolean) { return is_close: boolean } - Checks if standing units are near position
+
+distance_between_forces(a: any, b: any, standing_only: boolean) { return distance: number } - Calculates distance between forces
+
+get_all_units_from_force(force: any) { return units: table } - Extracts all units from force object
+
+get_closest_unit(obj: any, pos: vector, standing_only: boolean) { return unit: battle_unit, distance: number, sunit: script_unit } - Finds closest unit to position
+
+get_closest_standing_unit(obj: any, pos: vector) { return unit: battle_unit, distance: number, sunit: script_unit } - Finds closest standing unit
+
+get_position_near_target(pos: vector, min_dist: number, max_dist: number, min_angle: number, max_angle: number) { return position: vector } - Gets random position near target
+
+Utility Functions
+contains_unit(obj: any, unit: battle_unit) { return contains: boolean } - Checks if object contains unit
+
+refill_ammo(unit: battle_unit, quantity: number) { return success: boolean } - Refills unit ammo
+
+refresh_sunits(sunit_list: table) { return void } - Refreshes script units
+
+refresh_sunit(sunit: script_unit) { return void } - Refreshes single script unit
+
+enable(obj: any, value: boolean) { return void } - Enables/disables unit controllers
+
+set_visible(obj: any, value: boolean) { return void } - Sets unit visibility
+
+is_visible(obj: any, alliance: alliance) { return is_visible: boolean } - Checks unit visibility
+
